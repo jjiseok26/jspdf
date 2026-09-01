@@ -1,0 +1,61 @@
+{
+  "name": "jspdf-app",
+  "productName": "JSPDF",
+  "version": "0.1.0",
+  "description": "JSPDF - Windows desktop PDF editor",
+  "main": "src/main/main.js",
+  "author": "JSPDF",
+  "license": "MIT",
+  "scripts": {
+    "start": "npm run icon && electron .",
+    "smoke": "electron scripts/smoke.js",
+    "dist": "powershell -ExecutionPolicy Bypass -File scripts/generate-icon.ps1 && electron-builder --win nsis",
+    "icon": "powershell -ExecutionPolicy Bypass -File scripts/generate-icon.ps1"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.jspdf.app",
+    "productName": "JSPDF",
+    "icon": "build/icon.ico",
+    "files": [
+      "src/**/*",
+      "node_modules/pdfjs-dist/build/**/*",
+      "node_modules/pdfjs-dist/web/**/*",
+      "node_modules/pdf-lib/dist/pdf-lib.min.js",
+      "node_modules/tesseract.js/dist/**/*",
+      "node_modules/tesseract.js-core/**/*",
+      "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF 문서",
+        "description": "JSPDF로 열기",
+        "role": "Editor"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "JSPDF"
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

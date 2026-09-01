@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net blob: data:; worker-src 'self' blob:;" />
+    <title>JSPDF</title>
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="ribbon-shell">
+      <div class="titlebar">
+        <div class="brand">JSPDF <span id="version">v0.1.0</span></div>
+        <span id="docName" class="doc-name">열린 문서 없음</span>
+        <span id="zoomLabel" class="zoom-pill">100%</span>
+      </div>
+
+      <nav class="tab-bar" id="tabBar">
+        <button class="tab tab-file" data-tab="file">파일</button>
+        <button class="tab active" data-tab="home">홈</button>
+        <button class="tab" data-tab="edit">편집</button>
+        <button class="tab" data-tab="view">보기</button>
+        <button class="tab" data-tab="document">문서</button>
+        <button class="tab" data-tab="annotate">주석</button>
+        <button class="tab" data-tab="convert">변환</button>
+        <button class="tab" data-tab="help">도움말</button>
+      </nav>
+
+      <div class="ribbon-body">
+        <!-- 파일 -->
+        <div class="ribbon-panel" data-panel="file">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn" data-action="open"><span class="ico ico-open"></span><span>열기</span></button>
+              <button class="ribbon-btn" data-action="save"><span class="ico ico-save"></span><span>저장</span></button>
+              <button class="ribbon-btn" data-action="export-images"><span class="ico ico-image"></span><span>이미지 저장</span></button>
+            </div>
+            <div class="ribbon-group-label">파일</div>
+          </div>
+        </div>
+
+        <!-- 홈 -->
+        <div class="ribbon-panel active" data-panel="home">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn tool" data-tool="hand"><span class="ico ico-hand"></span><span>손 도구</span></button>
+              <button class="ribbon-btn tool active" data-tool="text"><span class="ico ico-text"></span><span>텍스트 선택</span></button>
+              <div class="ribbon-split">
+                <button class="ribbon-btn" data-action="zoom-in"><span class="ico ico-zoom"></span><span>배율</span></button>
+                <select id="zoomSelect" class="ribbon-select" title="배율">
+                  <option value="0.4">40%</option>
+                  <option value="0.6">60%</option>
+                  <option value="0.8">80%</option>
+                  <option value="1" selected>100%</option>
+                  <option value="1.2">120%</option>
+                  <option value="1.4">140%</option>
+                  <option value="1.6">160%</option>
+                  <option value="2">200%</option>
+                  <option value="3">300%</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn tool" data-tool="pen"><span class="ico ico-pen"></span><span>선 그리기</span></button>
+              <button class="ribbon-btn tool" data-tool="note"><span class="ico ico-note"></span><span>텍스트</span></button>
+              <button class="ribbon-btn tool" data-tool="highlight"><span class="ico ico-hl"></span><span>형광펜</span></button>
+              <button class="ribbon-btn tool" data-tool="select"><span class="ico ico-move"></span><span>주석 이동</span></button>
+            </div>
+            <div class="ribbon-group-label">주석</div>
+          </div>
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn" data-action="merge"><span class="ico ico-merge"></span><span>PDF 병합</span></button>
+              <button class="ribbon-btn" data-action="to-pdf-images"><span class="ico ico-convert"></span><span>PDF 변환</span></button>
+            </div>
+            <div class="ribbon-group-label">생성</div>
+          </div>
+          <div class="ribbon-group">
+            <div class="ribbon-items row find-row">
+              <input type="text" id="findInput" class="find-input" placeholder="찾기" />
+              <button class="ribbon-btn sm" data-action="find-prev" title="이전 찾기"><span class="ico ico-find-up"></span></button>
+              <button class="ribbon-btn sm" data-action="find-next" title="다음 찾기"><span class="ico ico-find-down"></span></button>
+            </div>
+            <div class="ribbon-group-label">찾기</div>
+          </div>
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn" data-action="toggle-thumbs"><span class="ico ico-pane"></span><span>탐색 창</span></button>
+            </div>
+            <div class="ribbon-group-label">탐색 창</div>
+          </div>
+        </div>
+
+        <!-- 편집 -->
+        <div class="ribbon-panel" data-panel="edit">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn tool" data-tool="edit"><span class="ico ico-edit"></span><span>본문 수정</span></button>
+              <button class="ribbon-btn tool" data-tool="seal"><span class="ico ico-seal"></span><span>전자인장</span></button>
+              <input type="text" id="sealText" class="ribbon-inline" placeholder="인장 문구" value="홍길동" />
+              <button class="ribbon-btn" data-action="seal-image"><span class="ico ico-image"></span><span>인장 이미지</span></button>
+              <canvas id="sealPreview" width="32" height="32" class="seal-preview"></canvas>
+            </div>
+            <div class="ribbon-group-label">편집</div>
+          </div>
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <label class="ribbon-inline-label">색상 <input type="color" id="color" value="#e03131" /></label>
+              <label class="ribbon-inline-label">두께 <input type="range" id="size" min="1" max="40" value="3" /></label>
+              <button class="ribbon-btn" data-action="undo"><span class="ico ico-undo"></span><span>되돌리기</span></button>
+              <button class="ribbon-btn" data-action="clear-page"><span class="ico ico-clear"></span><span>주석 삭제</span></button>
+            </div>
+            <div class="ribbon-group-label">속성</div>
+          </div>
+        </div>
+
+        <!-- 보기 -->
+        <div class="ribbon-panel" data-panel="view">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn" data-action="zoom-out"><span class="ico ico-zoom-out"></span><span>축소</span></button>
+              <button class="ribbon-btn" data-action="zoom-in"><span class="ico ico-zoom-in"></span><span>확대</span></button>
+              <button class="ribbon-btn" data-action="zoom-reset"><span class="ico ico-zoom"></span><span>100%</span></button>
+              <button class="ribbon-btn" data-action="present"><span class="ico ico-present"></span><span>프레젠테이션</span></button>
+            </div>
+            <div class="ribbon-group-label">보기</div>
+          </div>
+        </div>
+
+        <!-- 문서 -->
+        <div class="ribbon-panel" data-panel="document">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn" data-action="watermark"><span class="ico ico-watermark"></span><span>워터마크</span></button>
+              <button class="ribbon-btn" data-action="ocr"><span class="ico ico-ocr"></span><span>OCR 실행</span></button>
+            </div>
+            <div class="ribbon-group-label">문서</div>
+          </div>
+        </div>
+
+        <!-- 주석 -->
+        <div class="ribbon-panel" data-panel="annotate">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn tool" data-tool="pen"><span class="ico ico-pen"></span><span>펜</span></button>
+              <button class="ribbon-btn tool" data-tool="highlight"><span class="ico ico-hl"></span><span>형광펜</span></button>
+              <button class="ribbon-btn tool" data-tool="note"><span class="ico ico-note"></span><span>메모</span></button>
+              <button class="ribbon-btn tool" data-tool="select"><span class="ico ico-move"></span><span>이동</span></button>
+              <button class="ribbon-btn tool" data-tool="seal"><span class="ico ico-seal"></span><span>인장</span></button>
+            </div>
+            <div class="ribbon-group-label">주석 도구</div>
+          </div>
+        </div>
+
+        <!-- 변환 -->
+        <div class="ribbon-panel" data-panel="convert">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn" data-action="to-pdf-images"><span class="ico ico-convert"></span><span>이미지→PDF</span></button>
+              <button class="ribbon-btn" data-action="to-pdf-text"><span class="ico ico-convert"></span><span>텍스트→PDF</span></button>
+              <button class="ribbon-btn" data-action="from-pdf-text"><span class="ico ico-export"></span><span>역변환 TXT</span></button>
+              <button class="ribbon-btn" data-action="from-pdf-html"><span class="ico ico-export"></span><span>역변환 HTML</span></button>
+              <button class="ribbon-btn" data-action="merge"><span class="ico ico-merge"></span><span>병합</span></button>
+            </div>
+            <div class="ribbon-group-label">변환</div>
+          </div>
+        </div>
+
+        <!-- 도움말 -->
+        <div class="ribbon-panel" data-panel="help">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn" data-action="help"><span class="ico ico-help"></span><span>사용 안내</span></button>
+            </div>
+            <div class="ribbon-group-label">도움말</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="thumbs" id="thumbsPane">
+        <div class="thumbs-head">페이지 <span id="thumbHint">(드래그로 순서 변경)</span></div>
+        <div id="thumbList" class="thumb-list"></div>
+      </aside>
+
+      <div id="viewer" class="viewer">
+        <div class="empty-state">
+          <h2>JSPDF 0.1</h2>
+          <p>PDF 파일을 창에 끌어다 놓거나 <b>파일 → 열기</b>를 누르세요.</p>
+          <button class="ribbon-btn" data-action="open"><span class="ico ico-open"></span><span>PDF 열기</span></button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="statusbar"><span id="status">준비됨</span></footer>
+
+    <div id="dropHint" class="drop-hint hidden">여기에 PDF를 놓으면 열립니다</div>
+
+    <div id="present" class="present hidden">
+      <canvas id="presentCanvas"></canvas>
+      <div class="present-hint">← → 페이지 이동 · Esc 종료</div>
+    </div>
+
+    <div id="modal" class="modal hidden">
+      <form class="modal-box" id="modalForm">
+        <h3 id="modalTitle">입력</h3>
+        <div id="modalFields"></div>
+        <div class="modal-actions">
+          <button type="button" id="modalCancel">취소</button>
+          <button type="submit" id="modalOk">확인</button>
+        </div>
+      </form>
+    </div>
+
+    <script src="../../node_modules/pdf-lib/dist/pdf-lib.min.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

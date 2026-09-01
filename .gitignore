@@ -1,0 +1,9 @@
+node_modules/
+dist/
+scripts/sample.pdf
+scripts/smoke-screenshot.png
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
