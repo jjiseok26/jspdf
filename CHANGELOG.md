@@ -2,6 +2,14 @@
 
 All notable changes to JSPDF are documented here. Version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-09-01
+
+### Added
+- 페이지 회전: 현재 페이지 또는 전체 페이지를 시계/반시계 방향 90° 회전
+
+### Fixed
+- Windows 연결 프로그램 목록에 **JSPDF**로 표시되도록 exe 메타데이터·파일 연결 이름 수정
+
 ## [0.1.2] - 2026-09-01
 
 ### Added
@@ -39,6 +47,7 @@ All notable changes to JSPDF are documented here. Version numbers follow [Semant
 - Windows 연결 프로그램 등록 (PDF 우클릭 → JSPDF)
 - NSIS 설치 파일 빌드 (`npm run dist`)
 
+[0.1.3]: https://github.com/jjiseok26/jspdf/releases/tag/v0.1.3
 [0.1.2]: https://github.com/jjiseok26/jspdf/releases/tag/v0.1.2
 [0.1.1]: https://github.com/jjiseok26/jspdf/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jjiseok26/jspdf/releases/tag/v0.1.0

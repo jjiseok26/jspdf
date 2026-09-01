@@ -11,7 +11,7 @@
   <body>
     <header class="ribbon-shell">
       <div class="titlebar">
-        <div class="brand">JSPDF <span id="version">v0.1.2</span></div>
+        <div class="brand">JSPDF <span id="version">v0.1.3</span></div>
         <span id="docName" class="doc-name">열린 문서 없음</span>
         <span id="zoomLabel" class="zoom-pill">100%</span>
       </div>
@@ -138,6 +138,15 @@
 
         <!-- 문서 -->
         <div class="ribbon-panel" data-panel="document">
+          <div class="ribbon-group">
+            <div class="ribbon-items row">
+              <button class="ribbon-btn" data-action="rotate-page-ccw"><span class="ico ico-rotate-ccw"></span><span>현재 페이지 ↺</span></button>
+              <button class="ribbon-btn" data-action="rotate-page-cw"><span class="ico ico-rotate-cw"></span><span>현재 페이지 ↻</span></button>
+              <button class="ribbon-btn" data-action="rotate-all-ccw"><span class="ico ico-rotate-ccw"></span><span>전체 ↺</span></button>
+              <button class="ribbon-btn" data-action="rotate-all-cw"><span class="ico ico-rotate-cw"></span><span>전체 ↻</span></button>
+            </div>
+            <div class="ribbon-group-label">회전</div>
+          </div>
           <div class="ribbon-group">
             <div class="ribbon-items row">
               <button class="ribbon-btn" data-action="watermark"><span class="ico ico-watermark"></span><span>워터마크</span></button>

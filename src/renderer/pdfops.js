@@ -82,6 +82,20 @@ export async function flattenAnnotations(originalBytes, annotsByPage, scale = 2)
   return doc.save();
 }
 
+// 지정한 원본 페이지(0-base)를 deltaDegrees만큼 회전한다.
+export async function rotatePages(bytes, pageIndices, deltaDegrees) {
+  const doc = await PDFDocument.load(bytes);
+  const pages = doc.getPages();
+  const unique = [...new Set(pageIndices)].filter((i) => i >= 0 && i < pages.length);
+  for (const idx of unique) {
+    const page = pages[idx];
+    const cur = page.getRotation().angle;
+    const next = (cur + deltaDegrees + 360) % 360;
+    page.setRotation(degrees(next));
+  }
+  return doc.save();
+}
+
 // order: 원본 페이지 번호(0-base)를 원하는 배치 순서대로 담은 배열
 export async function reorderPages(bytes, order) {
   const unchanged = order.every((pageIndex, position) => pageIndex === position);

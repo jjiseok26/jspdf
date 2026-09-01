@@ -1,6 +1,6 @@
 import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
 import { drawAnnots, hitTest, hitResizeHandle, moveAnnot, resizeAnnot, makeSealImage } from './annots.js';
-import { flattenAnnotations, mergePdfs, addWatermark, imagesToPdf, textToPdf, reorderPages, canvasToPngBytes, canvasToJpegBytes, compressPdfRaster } from './pdfops.js';
+import { flattenAnnotations, mergePdfs, addWatermark, imagesToPdf, textToPdf, reorderPages, rotatePages, canvasToPngBytes, canvasToJpegBytes, compressPdfRaster } from './pdfops.js';
 import { extractPdfTextItems, renderTextLayer, textLength, itemsToPlainText } from './textlayer.js';
 import { recognizeCanvas } from './ocr.js';
 
@@ -697,6 +697,43 @@ function requireDoc() {
   return true;
 }
 
+function getCurrentPageIndex() {
+  if (!state.pages.length) return 0;
+  const viewerRect = viewer.getBoundingClientRect();
+  let best = state.pages[0].index;
+  let bestVisible = -1;
+  for (const info of state.pages) {
+    const rect = info.wrap.getBoundingClientRect();
+    const visible = Math.min(rect.bottom, viewerRect.bottom) - Math.max(rect.top, viewerRect.top);
+    if (visible > bestVisible) {
+      bestVisible = visible;
+      best = info.index;
+    }
+  }
+  return best;
+}
+
+async function applyPageRotation(pageIndices, deltaDegrees) {
+  if (!requireDoc()) return;
+  const indices = [...new Set(pageIndices)].filter((i) => i >= 0 && i < state.pdf.numPages);
+  if (!indices.length) return;
+  const label = indices.length === 1 ? `${indices[0] + 1}쪽` : `전체 ${indices.length}쪽`;
+  const dir = deltaDegrees > 0 ? '시계 방향' : '반시계 방향';
+  setStatus(`${label} ${dir} 90° 회전 중...`);
+  const bytes = await buildOutputBytes();
+  const rotated = await rotatePages(bytes, indices, deltaDegrees);
+  for (const idx of indices) {
+    state.annots[idx] = [];
+    delete state.textItems[idx];
+  }
+  state.originalBytes = new Uint8Array(rotated);
+  state.pdf = await pdfjsLib.getDocument({ data: state.originalBytes }).promise;
+  state.selected = { page: -1, index: -1 };
+  await renderAll();
+  await renderThumbs();
+  setStatus(`${label} ${dir} 90° 회전 완료 · 저장하면 PDF에 반영됩니다`);
+}
+
 // 주석을 합성하고 썸네일에서 바꾼 페이지 순서를 적용한 최종 바이트를 만든다.
 async function buildOutputBytes() {
   const flattened = await flattenAnnotations(state.originalBytes, state.annots);
@@ -904,6 +941,22 @@ const actions = {
 
   present: enterPresent,
 
+  'rotate-page-cw'() {
+    applyPageRotation([getCurrentPageIndex()], 90);
+  },
+
+  'rotate-page-ccw'() {
+    applyPageRotation([getCurrentPageIndex()], -90);
+  },
+
+  'rotate-all-cw'() {
+    applyPageRotation(Array.from({ length: state.pdf?.numPages || 0 }, (_, i) => i), 90);
+  },
+
+  'rotate-all-ccw'() {
+    applyPageRotation(Array.from({ length: state.pdf?.numPages || 0 }, (_, i) => i), -90);
+  },
+
   undo() {
     for (let position = state.order.length - 1; position >= 0; position -= 1) {
       const pageIndex = state.order[position];
@@ -962,7 +1015,7 @@ const actions = {
         name: 'info',
         label: '',
         type: 'textarea',
-        value: `JSPDF — Windows용 PDF 편집기 (v0.1.2)
+        value: `JSPDF — Windows용 PDF 편집기 (v0.1.3)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【1. 파일 열기 · 저장】
@@ -1006,6 +1059,7 @@ const actions = {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【5. 문서 · 변환 탭】
+· 페이지 회전: 현재 페이지 또는 전체를 시계/반시계 방향 90°
 · 워터마크: 대각선 반투명 문구 삽입
 · OCR 실행: 스캔 문서 전체 글자 인식
 · PDF 병합: 여러 PDF를 하나로 합치기
