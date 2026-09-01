@@ -19,6 +19,25 @@ export function canvasToPngBytes(canvas) {
   return bytes;
 }
 
+export function canvasToJpegBytes(canvas, quality = 0.75) {
+  const base64 = canvas.toDataURL('image/jpeg', quality).split(',')[1];
+  const raw = atob(base64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+// 페이지를 JPEG로 래스터화해 용량을 줄인 PDF를 만든다.
+export async function compressPdfRaster(pageRasters) {
+  const doc = await PDFDocument.create();
+  for (const p of pageRasters) {
+    const image = await doc.embedJpg(p.jpegBytes);
+    const page = doc.addPage([p.width, p.height]);
+    page.drawImage(image, { x: 0, y: 0, width: p.width, height: p.height });
+  }
+  return doc.save({ useObjectStreams: true });
+}
+
 // 화면(뷰포트) 방향으로 그려진 오버레이를 페이지 원본(미디어박스) 방향으로 되돌린다.
 function toMediaOriented(overlay, rotation, mediaW, mediaH, scale) {
   const target = newCanvas(mediaW * scale, mediaH * scale);

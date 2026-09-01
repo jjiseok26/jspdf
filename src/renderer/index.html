@@ -11,7 +11,7 @@
   <body>
     <header class="ribbon-shell">
       <div class="titlebar">
-        <div class="brand">JSPDF <span id="version">v0.1.0</span></div>
+        <div class="brand">JSPDF <span id="version">v0.1.2</span></div>
         <span id="docName" class="doc-name">열린 문서 없음</span>
         <span id="zoomLabel" class="zoom-pill">100%</span>
       </div>
@@ -34,6 +34,9 @@
             <div class="ribbon-items row">
               <button class="ribbon-btn" data-action="open"><span class="ico ico-open"></span><span>열기</span></button>
               <button class="ribbon-btn" data-action="save"><span class="ico ico-save"></span><span>저장</span></button>
+              <button class="ribbon-btn" data-action="save-as"><span class="ico ico-save-as"></span><span>다른 이름으로 저장</span></button>
+              <button class="ribbon-btn" data-action="print"><span class="ico ico-print"></span><span>인쇄</span></button>
+              <button class="ribbon-btn" data-action="compress"><span class="ico ico-compress"></span><span>파일 축소</span></button>
               <button class="ribbon-btn" data-action="export-images"><span class="ico ico-image"></span><span>이미지 저장</span></button>
             </div>
             <div class="ribbon-group-label">파일</div>
@@ -65,9 +68,11 @@
           <div class="ribbon-group">
             <div class="ribbon-items row">
               <button class="ribbon-btn tool" data-tool="pen"><span class="ico ico-pen"></span><span>선 그리기</span></button>
-              <button class="ribbon-btn tool" data-tool="note"><span class="ico ico-note"></span><span>텍스트</span></button>
+              <button class="ribbon-btn tool" data-tool="insert"><span class="ico ico-note"></span><span>텍스트 삽입</span></button>
+              <button class="ribbon-btn tool" data-tool="note"><span class="ico ico-note"></span><span>메모</span></button>
               <button class="ribbon-btn tool" data-tool="highlight"><span class="ico ico-hl"></span><span>형광펜</span></button>
               <button class="ribbon-btn tool" data-tool="select"><span class="ico ico-move"></span><span>주석 이동</span></button>
+              <button class="ribbon-btn" data-action="delete-selected"><span class="ico ico-clear"></span><span>선택 삭제</span></button>
             </div>
             <div class="ribbon-group-label">주석</div>
           </div>
@@ -124,6 +129,7 @@
               <button class="ribbon-btn" data-action="zoom-out"><span class="ico ico-zoom-out"></span><span>축소</span></button>
               <button class="ribbon-btn" data-action="zoom-in"><span class="ico ico-zoom-in"></span><span>확대</span></button>
               <button class="ribbon-btn" data-action="zoom-reset"><span class="ico ico-zoom"></span><span>100%</span></button>
+              <button class="ribbon-btn" data-action="print"><span class="ico ico-print"></span><span>인쇄</span></button>
               <button class="ribbon-btn" data-action="present"><span class="ico ico-present"></span><span>프레젠테이션</span></button>
             </div>
             <div class="ribbon-group-label">보기</div>
@@ -146,6 +152,7 @@
           <div class="ribbon-group">
             <div class="ribbon-items row">
               <button class="ribbon-btn tool" data-tool="pen"><span class="ico ico-pen"></span><span>펜</span></button>
+              <button class="ribbon-btn tool" data-tool="insert"><span class="ico ico-note"></span><span>텍스트</span></button>
               <button class="ribbon-btn tool" data-tool="highlight"><span class="ico ico-hl"></span><span>형광펜</span></button>
               <button class="ribbon-btn tool" data-tool="note"><span class="ico ico-note"></span><span>메모</span></button>
               <button class="ribbon-btn tool" data-tool="select"><span class="ico ico-move"></span><span>이동</span></button>
@@ -196,13 +203,17 @@
       </div>
     </main>
 
-    <footer class="statusbar"><span id="status">준비됨</span></footer>
+    <footer class="statusbar">
+      <span id="status">준비됨</span>
+      <span class="copyright">Copyright © jiseok</span>
+    </footer>
 
     <div id="dropHint" class="drop-hint hidden">여기에 PDF를 놓으면 열립니다</div>
 
-    <div id="present" class="present hidden">
+    <div id="present" class="present hidden" tabindex="-1">
       <canvas id="presentCanvas"></canvas>
-      <div class="present-hint">← → 페이지 이동 · Esc 종료</div>
+      <div id="presentPage" class="present-page">1 / 1</div>
+      <div class="present-hint">← → 또는 Space · 클릭(왼쪽 이전/오른쪽 다음) · Esc 종료</div>
     </div>
 
     <div id="modal" class="modal hidden">

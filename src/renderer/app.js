@@ -1,6 +1,6 @@
 import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
-import { drawAnnots, hitTest, moveAnnot, makeSealImage } from './annots.js';
-import { flattenAnnotations, mergePdfs, addWatermark, imagesToPdf, textToPdf, reorderPages, canvasToPngBytes } from './pdfops.js';
+import { drawAnnots, hitTest, hitResizeHandle, moveAnnot, resizeAnnot, makeSealImage } from './annots.js';
+import { flattenAnnotations, mergePdfs, addWatermark, imagesToPdf, textToPdf, reorderPages, canvasToPngBytes, canvasToJpegBytes, compressPdfRaster } from './pdfops.js';
 import { extractPdfTextItems, renderTextLayer, textLength, itemsToPlainText } from './textlayer.js';
 import { recognizeCanvas } from './ocr.js';
 
@@ -19,6 +19,7 @@ const state = {
   originalBytes: null,
   pdf: null,
   name: '',
+  filePath: null,
   zoom: 1,
   tool: 'text',
   annots: {},
@@ -87,10 +88,11 @@ function showModal(title, fields) {
 }
 
 /* ---------- 문서 열기 / 렌더 ---------- */
-async function loadPdf(bytes, name) {
+async function loadPdf(bytes, name, filePath = null) {
   state.originalBytes = new Uint8Array(bytes);
   state.pdf = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
   state.name = name;
+  state.filePath = filePath;
   state.annots = {};
   state.selected = { page: -1, index: -1 };
   state.order = Array.from({ length: state.pdf.numPages }, (_, i) => i);
@@ -164,15 +166,27 @@ function syncZoomSelect() {
 
 function updatePointerMode() {
   const textMode = state.tool === 'text';
-  const drawTools = ['pen', 'highlight', 'note', 'edit', 'seal'];
+  const drawTools = ['pen', 'highlight', 'note', 'insert', 'edit', 'seal'];
   const drawMode = drawTools.includes(state.tool);
   const handMode = state.tool === 'hand';
+  const selectMode = state.tool === 'select';
 
   viewer.classList.toggle('hand-mode', handMode);
 
   for (const info of state.pages) {
     if (info.textLayer) info.textLayer.classList.toggle('active', textMode);
-    if (info.overlay) info.overlay.style.pointerEvents = drawMode ? 'auto' : 'none';
+    if (info.overlay) info.overlay.style.pointerEvents = 'none';
+    if (info.wrap) {
+      info.wrap.style.cursor = handMode
+        ? 'grab'
+        : textMode
+          ? 'text'
+          : drawMode
+            ? 'crosshair'
+            : selectMode
+              ? 'default'
+              : 'default';
+    }
   }
 }
 
@@ -241,34 +255,71 @@ function paintOverlay(pageIndex) {
 /* ---------- 페이지 썸네일 / 순서 변경 ---------- */
 const thumbList = document.getElementById('thumbList');
 
+function inkColor() {
+  return colorInput?.value || '#111111';
+}
+
+// 페이지 높이 대비 글자 크기(0~1). 슬라이더 1~40 → 약 14~28px
+function fontSizeNorm() {
+  const n = Number(sizeInput?.value || 14);
+  return 0.012 + (n / 40) * 0.018;
+}
+
+function deleteSelected() {
+  const { page, index } = state.selected;
+  if (page < 0 || index < 0) return setStatus('삭제할 개체를 먼저 선택하세요 (주석 이동 도구)');
+  annotsOf(page).splice(index, 1);
+  state.selected = { page: -1, index: -1 };
+  paintOverlay(page);
+  refreshThumb(page);
+  setStatus('선택한 개체를 삭제했습니다');
+}
+
+async function renderThumbAt(position) {
+  const pageIndex = state.order[position];
+  const page = await state.pdf.getPage(pageIndex + 1);
+  const baseVp = page.getViewport({ scale: 1 });
+  const thumbW = 150;
+  const viewport = page.getViewport({ scale: thumbW / baseVp.width });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  drawAnnots(ctx, annotsOf(pageIndex), canvas.width, canvas.height, -1, false);
+
+  const item = document.createElement('div');
+  item.className = 'thumb';
+  item.draggable = true;
+  item.dataset.position = String(position);
+  item.dataset.pageIndex = String(pageIndex);
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = `${position + 1} (원본 ${pageIndex + 1})`;
+  item.append(canvas, label);
+  item.addEventListener('click', () => {
+    const info = pageInfo(pageIndex);
+    if (info) info.wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    thumbList.querySelectorAll('.thumb').forEach((el) => el.classList.toggle('current', el === item));
+  });
+  return item;
+}
+
+async function refreshThumb(pageIndex) {
+  const position = state.order.indexOf(pageIndex);
+  if (position < 0) return;
+  const old = thumbList.querySelector(`.thumb[data-page-index="${pageIndex}"]`);
+  const item = await renderThumbAt(position);
+  if (old) old.replaceWith(item);
+}
+
 async function renderThumbs() {
   thumbList.innerHTML = '';
   for (let position = 0; position < state.order.length; position += 1) {
-    const pageIndex = state.order[position];
-    const page = await state.pdf.getPage(pageIndex + 1);
-    const base = page.getViewport({ scale: 1 });
-    const viewport = page.getViewport({ scale: 150 / base.width });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-    drawAnnots(canvas.getContext('2d'), annotsOf(pageIndex), canvas.width, canvas.height);
-
-    const item = document.createElement('div');
-    item.className = 'thumb';
-    item.draggable = true;
-    item.dataset.position = String(position);
-    const label = document.createElement('div');
-    label.className = 'label';
-    label.textContent = `${position + 1} (원본 ${pageIndex + 1})`;
-    item.append(canvas, label);
-    item.addEventListener('click', () => {
-      const info = pageInfo(pageIndex);
-      if (info) info.wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      thumbList.querySelectorAll('.thumb').forEach((el) => el.classList.toggle('current', el === item));
-    });
-    thumbList.appendChild(item);
+    thumbList.appendChild(await renderThumbAt(position));
   }
 }
 
@@ -319,9 +370,8 @@ thumbList.addEventListener('dragend', finishThumbDrag);
 
 /* ---------- 편집 상호작용 ---------- */
 function attachEditing(info) {
-  const canvas = info.overlay;
   const norm = (event) => {
-    const rect = canvas.getBoundingClientRect();
+    const rect = info.wrap.getBoundingClientRect();
     return { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
   };
   let drag = null;
@@ -339,15 +389,47 @@ function attachEditing(info) {
     } else if (drag.kind === 'move') {
       moveAnnot(drag.annot, p.x - drag.last.x, p.y - drag.last.y);
       drag.last = p;
+    } else if (drag.kind === 'resize') {
+      resizeAnnot(drag.annot, p.x - drag.last.x, p.y - drag.last.y);
+      drag.last = p;
     }
     paintOverlay(info.index);
   };
 
-  const endDrag = () => {
+  const endDrag = async () => {
     if (!drag) return;
+    const finished = drag;
     drag = null;
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', endDrag);
+
+    if (finished.kind === 'rect' && finished.annot.t === 'edit') {
+      const list = annotsOf(info.index);
+      if (finished.annot.w < 0.02 || finished.annot.h < 0.015) {
+        const idx = list.indexOf(finished.annot);
+        if (idx >= 0) list.splice(idx, 1);
+      } else {
+        const values = await showModal('본문 수정', [
+          { name: 'text', label: '새로 넣을 텍스트', type: 'textarea' },
+          { name: 'bg', label: '기존 글자를 덮을 배경색', type: 'color', value: '#ffffff' }
+        ]);
+        if (!values || !values.text?.trim()) {
+          const idx = list.indexOf(finished.annot);
+          if (idx >= 0) list.splice(idx, 1);
+        } else {
+          finished.annot.text = values.text;
+          finished.annot.bg = values.bg || '#ffffff';
+          finished.annot.color = '#111111';
+          delete finished.annot.pending;
+        }
+      }
+      paintOverlay(info.index);
+      refreshThumb(info.index);
+      setStatus('본문 수정 영역 적용 · 모서리 녹색 사각형으로 크기 조절');
+      return;
+    }
+
+    refreshThumb(info.index);
   };
 
   const startDrag = () => {
@@ -356,69 +438,111 @@ function attachEditing(info) {
   };
 
   info.wrap.addEventListener('mousedown', async (event) => {
-    if (state.tool !== 'select') return;
-    if (event.target.closest('.text-layer span')) return;
+    if (state.tool === 'text' && event.target.closest('.text-layer span')) return;
 
     const p = norm(event);
     const list = annotsOf(info.index);
-    const index = hitTest(list, p.x, p.y);
-    state.selected = { page: info.index, index };
-    if (index >= 0) {
-      drag = { kind: 'move', annot: list[index], last: p };
-      startDrag();
+    const strokeWidth = Number(sizeInput?.value || 3) / 1000;
+
+    if (state.tool === 'select') {
+      if (event.target.closest('.text-layer span')) return;
+      const handle = hitResizeHandle(list, p.x, p.y);
+      if (handle) {
+        state.selected = { page: info.index, index: handle.index };
+        drag = { kind: 'resize', annot: list[handle.index], last: p };
+        startDrag();
+        state.pages.forEach((pg) => paintOverlay(pg.index));
+        return;
+      }
+      const index = hitTest(list, p.x, p.y);
+      state.selected = { page: info.index, index };
+      if (index >= 0) {
+        drag = { kind: 'move', annot: list[index], last: p };
+        startDrag();
+        setStatus('개체 선택 · Delete 키 또는 [선택 삭제]로 제거 · 녹색 모서리로 크기 조절');
+      } else {
+        setStatus('개체가 선택되지 않았습니다');
+      }
+      state.pages.forEach((pg) => paintOverlay(pg.index));
+      return;
     }
-    state.pages.forEach((pg) => paintOverlay(pg.index));
-  });
 
-  canvas.addEventListener('mousedown', async (event) => {
-    if (state.tool === 'select') return;
+    if (!['pen', 'highlight', 'note', 'insert', 'edit', 'seal'].includes(state.tool)) return;
+    if (event.target.closest('.text-layer.active')) return;
 
-    const p = norm(event);
-    const list = annotsOf(info.index);
-    const strokeWidth = Number(sizeInput.value) / 1000;
-    const fontRatio = Number(sizeInput.value) / 600;
+    event.preventDefault();
+
+    const fs = fontSizeNorm();
 
     if (state.tool === 'pen') {
-      const annot = { t: 'pen', color: colorInput.value, w: strokeWidth, pts: [[p.x, p.y]] };
+      const annot = { t: 'pen', color: inkColor(), w: strokeWidth, pts: [[p.x, p.y]] };
       list.push(annot);
       drag = { kind: 'pen', annot };
       startDrag();
       return;
     }
     if (state.tool === 'highlight') {
-      const annot = { t: 'hl', color: colorInput.value, x: p.x, y: p.y, w: 0, h: 0 };
+      const annot = { t: 'hl', color: colorInput?.value || '#ffd43b', x: p.x, y: p.y, w: 0, h: 0 };
       list.push(annot);
       drag = { kind: 'rect', annot, origin: p };
       startDrag();
       return;
     }
     if (state.tool === 'note') {
-      const values = await showModal('메모 주석', [{ name: 'text', label: '내용', type: 'textarea' }]);
+      const values = await showModal('메모 주석', [{ name: 'text', label: '메모 내용', type: 'textarea', placeholder: '메모를 입력하세요' }]);
       if (!values || !values.text.trim()) return;
-      list.push({ t: 'note', text: values.text, x: p.x, y: p.y, w: 0.26, h: 0.06, size: fontRatio * 0.04, color: colorInput.value });
+      list.push({
+        t: 'note',
+        text: values.text,
+        x: p.x,
+        y: p.y,
+        w: 0.28,
+        h: 0.08,
+        size: fs,
+        color: colorInput?.value || '#e03131'
+      });
       paintOverlay(info.index);
-      setStatus('메모 주석 추가');
+      refreshThumb(info.index);
+      setStatus('메모 추가 · 주석 이동으로 위치 변경 · Delete로 삭제');
+      return;
+    }
+    if (state.tool === 'insert') {
+      const values = await showModal('텍스트 삽입', [
+        { name: 'text', label: '삽입할 텍스트', type: 'textarea', placeholder: '문서에 넣을 글자' }
+      ]);
+      if (!values || !values.text.trim()) return;
+      list.push({
+        t: 'insert',
+        text: values.text,
+        x: p.x,
+        y: p.y,
+        w: 0.42,
+        h: 0.05,
+        size: fs,
+        color: inkColor()
+      });
+      paintOverlay(info.index);
+      refreshThumb(info.index);
+      setStatus('텍스트 삽입 완료 · 저장하면 PDF에 합쳐집니다');
       return;
     }
     if (state.tool === 'edit') {
-      const values = await showModal('본문 수정 (기존 내용을 덮고 새 텍스트 삽입)', [
-        { name: 'text', label: '새 본문', type: 'textarea' },
-        { name: 'bg', label: '덮을 배경색', type: 'color', value: '#ffffff' }
-      ]);
-      if (!values) return;
-      list.push({
+      const annot = {
         t: 'edit',
-        text: values.text,
-        bg: values.bg,
+        text: '',
+        bg: '#ffffff',
         x: p.x,
         y: p.y,
-        w: 0.4,
-        h: 0.06,
-        size: fontRatio * 0.03,
-        color: '#111111'
-      });
-      paintOverlay(info.index);
-      setStatus('본문 수정 블록 추가 (선택 도구로 이동 가능)');
+        w: 0,
+        h: 0,
+        size: fs,
+        color: '#111111',
+        pending: true
+      };
+      list.push(annot);
+      drag = { kind: 'rect', annot, origin: p };
+      startDrag();
+      setStatus('수정할 영역을 드래그로 지정하세요');
       return;
     }
     if (state.tool === 'seal') {
@@ -426,49 +550,61 @@ function attachEditing(info) {
       const side = 0.14;
       list.push({ t: 'seal', img: image, x: p.x - side / 2, y: p.y - side / 2, w: side, h: side, opacity: 0.95 });
       paintOverlay(info.index);
+      refreshThumb(info.index);
       setStatus('전자인장 삽입');
     }
   });
 
-  canvas.addEventListener('dblclick', async () => {
+  info.wrap.addEventListener('dblclick', async () => {
     const { page, index } = state.selected;
     if (page !== info.index || index < 0) return;
     const annot = annotsOf(page)[index];
-    if (annot.t !== 'note' && annot.t !== 'edit') return;
+    if (!['note', 'edit', 'insert'].includes(annot.t)) return;
     const values = await showModal('텍스트 수정', [{ name: 'text', label: '내용', type: 'textarea', value: annot.text }]);
     if (!values) return;
     annot.text = values.text;
     paintOverlay(page);
+    refreshThumb(page);
   });
 }
 
 document.addEventListener('keydown', (event) => {
   if (state.present.on) {
-    if (event.key === 'Escape') exitPresent();
-    if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') showPresentPage(state.present.page + 1);
-    if (event.key === 'ArrowLeft' || event.key === 'PageUp') showPresentPage(state.present.page - 1);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      exitPresent();
+    } else if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+      event.preventDefault();
+      showPresentPage(state.present.page + 1);
+    } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+      event.preventDefault();
+      showPresentPage(state.present.page - 1);
+    }
     return;
   }
   if ((event.key === 'Delete' || event.key === 'Backspace') && state.selected.index >= 0) {
-    const { page, index } = state.selected;
-    annotsOf(page).splice(index, 1);
-    state.selected = { page: -1, index: -1 };
-    paintOverlay(page);
+    if (event.target.closest('input, textarea')) return;
+    event.preventDefault();
+    deleteSelected();
   }
 });
 
 /* ---------- 프레젠테이션 ---------- */
 const presentEl = document.getElementById('present');
 const presentCanvas = document.getElementById('presentCanvas');
+let presentIgnoreClick = false;
 
 async function showPresentPage(index) {
-  if (!state.pdf) return;
+  if (!state.pdf || !state.present.on) return;
   const clamped = Math.max(0, Math.min(state.order.length - 1, index));
   state.present.page = clamped;
   const pageIndex = state.order[clamped];
   const page = await state.pdf.getPage(pageIndex + 1);
   const base = page.getViewport({ scale: 1 });
-  const scale = Math.min(window.innerWidth / base.width, window.innerHeight / base.height);
+  const scale = Math.min(
+    (window.innerWidth - 40) / base.width,
+    (window.innerHeight - 80) / base.height
+  );
   const viewport = page.getViewport({ scale });
   presentCanvas.width = viewport.width;
   presentCanvas.height = viewport.height;
@@ -476,21 +612,43 @@ async function showPresentPage(index) {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, presentCanvas.width, presentCanvas.height);
   await page.render({ canvasContext: ctx, viewport }).promise;
-  drawAnnots(ctx, annotsOf(pageIndex), presentCanvas.width, presentCanvas.height);
+  drawAnnots(ctx, annotsOf(pageIndex), presentCanvas.width, presentCanvas.height, -1, false);
+  const pageEl = document.getElementById('presentPage');
+  if (pageEl) pageEl.textContent = `${clamped + 1} / ${state.order.length}`;
 }
 
 async function enterPresent() {
   if (!state.pdf) return setStatus('먼저 PDF를 열어주세요');
   state.present.on = true;
+  state.present.page = 0;
   presentEl.classList.remove('hidden');
-  await window.api.setFullScreen(true);
+  presentEl.tabIndex = -1;
+  presentEl.focus();
+  presentIgnoreClick = true;
+  setTimeout(() => {
+    presentIgnoreClick = false;
+  }, 400);
+  try {
+    await presentEl.requestFullscreen();
+  } catch {
+    await window.api.setFullScreen(true);
+  }
   await showPresentPage(0);
+  setStatus('프레젠테이션 · ← → 또는 Space · Esc 종료 · 클릭: 왼쪽 이전 / 오른쪽 다음');
 }
 
-function exitPresent() {
+async function exitPresent() {
   state.present.on = false;
   presentEl.classList.add('hidden');
-  window.api.setFullScreen(false);
+  if (document.fullscreenElement) {
+    try {
+      await document.exitFullscreen();
+    } catch {
+      /* ignore */
+    }
+  }
+  await window.api.setFullScreen(false);
+  setStatus('프레젠테이션 종료');
 }
 
 /* ---------- PDF 텍스트 추출 ---------- */
@@ -521,6 +679,16 @@ function baseName() {
   return state.name.replace(/\.pdf$/i, '') || 'document';
 }
 
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function fileNameFromPath(filePath) {
+  return filePath.split(/[/\\]/).pop() || 'document.pdf';
+}
+
 function requireDoc() {
   if (!state.pdf) {
     setStatus('먼저 PDF를 열어주세요');
@@ -540,15 +708,92 @@ const actions = {
   async open() {
     const [file] = await window.api.openPdfs(false);
     if (!file) return;
-    await loadPdf(file.data, file.name);
+    await loadPdf(file.data, file.name, file.path || null);
   },
 
   async save() {
     if (!requireDoc()) return;
     setStatus('저장 중...');
     const bytes = await buildOutputBytes();
-    const saved = await window.api.savePdf(`${baseName()}-편집.pdf`, bytes);
+    if (state.filePath) {
+      await window.api.savePdf(null, bytes, { filePath: state.filePath });
+      setStatus(`저장 완료: ${state.filePath}`);
+      return;
+    }
+    const saved = await window.api.savePdf(`${baseName()}.pdf`, bytes);
+    if (saved) {
+      state.filePath = saved;
+      state.name = fileNameFromPath(saved);
+      docNameEl.textContent = `${state.name} (${state.pdf.numPages}페이지)`;
+    }
     setStatus(saved ? `저장 완료: ${saved}` : '저장 취소');
+  },
+
+  async 'save-as'() {
+    if (!requireDoc()) return;
+    setStatus('다른 이름으로 저장 중...');
+    const bytes = await buildOutputBytes();
+    const saved = await window.api.savePdf(`${baseName()}.pdf`, bytes);
+    if (saved) {
+      state.filePath = saved;
+      state.name = fileNameFromPath(saved);
+      docNameEl.textContent = `${state.name} (${state.pdf.numPages}페이지)`;
+    }
+    setStatus(saved ? `다른 이름으로 저장 완료: ${saved}` : '저장 취소');
+  },
+
+  async print() {
+    if (!requireDoc()) return;
+    setStatus('인쇄 준비 중...');
+    const bytes = await buildOutputBytes();
+    const result = await window.api.printPdf(bytes);
+    setStatus(result.success ? '인쇄 대화상자를 열었습니다' : `인쇄 실패: ${result.failureReason || '알 수 없음'}`);
+  },
+
+  async compress() {
+    if (!requireDoc()) return;
+    const values = await showModal('파일 크기 축소', [
+      { name: 'level', label: '축소 수준 (낮음 / 보통 / 높음)', value: '보통' }
+    ]);
+    if (!values) return;
+    const presets = {
+      낮음: { quality: 0.55, scale: 1.2 },
+      보통: { quality: 0.72, scale: 1.5 },
+      높음: { quality: 0.85, scale: 2 }
+    };
+    const preset = presets[values.level.trim()] || presets['보통'];
+    setStatus('파일 축소 중...');
+    const sourceBytes = await buildOutputBytes();
+    const before = sourceBytes.length;
+    const rasters = [];
+    for (let position = 0; position < state.order.length; position += 1) {
+      const pageIndex = state.order[position];
+      const page = await state.pdf.getPage(pageIndex + 1);
+      const baseVp = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: preset.scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      drawAnnots(ctx, annotsOf(pageIndex), canvas.width, canvas.height);
+      rasters.push({
+        width: baseVp.width,
+        height: baseVp.height,
+        jpegBytes: canvasToJpegBytes(canvas, preset.quality)
+      });
+      setStatus(`파일 축소 중... ${position + 1}/${state.order.length}`);
+    }
+    const compressed = await compressPdfRaster(rasters);
+    const after = compressed.length;
+    const saved = await window.api.savePdf(`${baseName()}-축소.pdf`, compressed);
+    setStatus(
+      saved
+        ? `축소 완료: ${formatBytes(before)} → ${formatBytes(after)} (${before > after ? Math.round((1 - after / before) * 100) : 0}% 감소) · ${saved}`
+        : '축소 저장 취소'
+    );
   },
 
   async merge() {
@@ -709,18 +954,76 @@ const actions = {
     findStep(-1);
   },
 
+  'delete-selected': deleteSelected,
+
   help() {
-    showModal('JSPDF 사용 안내', [
+    showModal('JSPDF 도움말', [
       {
         name: 'info',
         label: '',
         type: 'textarea',
-        value:
-          '• 홈 탭: 손 도구(끌어서 이동), 텍스트 선택(드래그 후 Ctrl+C)\n' +
-          '• 주석 탭: 펜·형광펜·메모·인장\n' +
-          '• 편집 탭: 본문 수정·인장 설정\n' +
-          '• 변환 탭: PDF 병합·이미지/텍스트 변환·역변환\n' +
-          '• 왼쪽 썸네일을 드래그하면 페이지 순서 변경'
+        value: `JSPDF — Windows용 PDF 편집기 (v0.1.2)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【1. 파일 열기 · 저장】
+· [파일] 탭 → PDF 열기, 또는 창/탐색기에서 PDF를 드래그 앤 드롭
+· [저장]: 열었던 경로가 있으면 덮어쓰기, 없으면 저장 대화상자
+· [다른 이름으로 저장]: 항상 새 경로에 저장
+· [인쇄]: 현재 문서(주석 포함)를 프린터로 출력
+· [파일 축소]: JPEG 압축으로 PDF 용량 줄이기 (낮음/보통/높음)
+· Windows 탐색기에서 PDF 우클릭 → "연결 프로그램"으로 JSPDF 등록 가능
+· 저장 시 주석·텍스트·본문 수정·인장이 PDF에 합쳐집니다
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【2. 홈 탭 — 기본 도구】
+· 손 도구: 문서 화면을 끌어서 위·아래로 이동
+· 텍스트 선택: 글자 위에서 드래그 → Ctrl+C로 복사
+  - 스캔 PDF는 자동 OCR 후 글자 선택 가능 (문서 탭에서 OCR 실행도 가능)
+· 텍스트 삽입: 삽입할 위치 클릭 → 글자 입력 → 문서에 표시 (저장 시 PDF에 반영)
+· 메모: 클릭 후 메모 내용 입력 → 노란 메모 박스 표시
+· 형광펜: 드래그로 영역 지정
+· 선 그리기: 마우스로 자유 곡선
+· 주석 이동: 개체 클릭하여 선택 → 드래그로 이동
+  - 녹색 모서리 핸들: 영역 크기 조절 (메모·텍스트·본문수정·형광펜)
+  - Delete / Backspace 또는 [선택 삭제]: 선택 개체 제거
+  - 더블클릭: 메모·텍스트·본문수정 내용 편집
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【3. 편집 탭】
+· 본문 수정: 기존 글자를 덮어 새 텍스트로 바꿉니다
+  ① [본문 수정] 선택 → 수정할 영역을 드래그
+  ② 새 텍스트와 배경색(기본 흰색) 입력
+  ③ 저장하면 해당 영역이 새 글자로 교체됩니다
+· 전자인장: 인장 문구 입력 또는 이미지 불러오기 → 페이지에 배치
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【4. 보기 탭】
+· 확대/축소/100%: 보기 배율 조절
+· 프레젠테이션: 전체화면 슬라이드쇼
+  - ← → / PageUp·Down / Space: 페이지 이동
+  - 화면 왼쪽 클릭: 이전 / 오른쪽 클릭: 다음
+  - Esc: 종료
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【5. 문서 · 변환 탭】
+· 워터마크: 대각선 반투명 문구 삽입
+· OCR 실행: 스캔 문서 전체 글자 인식
+· PDF 병합: 여러 PDF를 하나로 합치기
+· PDF 변환: 페이지를 PNG/JPG로보내기
+· 이미지→PDF / 텍스트→PDF / 역변환(이미지·텍스트를 PDF로)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【6. 페이지 순서】
+· 왼쪽 썸네일을 드래그하여 페이지 순서 변경
+· 저장·보내기 시 변경된 순서가 반영됩니다
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【단축키】
+· Ctrl+C: 선택한 텍스트 복사
+· Delete / Backspace: 선택한 주석·개체 삭제
+· Esc: 프레젠테이션 종료
+
+Copyright © jiseok · https://github.com/jjiseok26/jspdf`
       }
     ]);
   },
@@ -820,7 +1123,16 @@ document.addEventListener('selectionchange', () => {
   if (text) setStatus(`선택됨 (${text.length}자) · Ctrl+C로 복사`);
 });
 
-presentEl.addEventListener('click', () => showPresentPage(state.present.page + 1));
+presentEl.addEventListener('click', (event) => {
+  if (!state.present.on || presentIgnoreClick) return;
+  const rect = presentCanvas.getBoundingClientRect();
+  if (event.clientX < rect.left + rect.width / 2) showPresentPage(state.present.page - 1);
+  else showPresentPage(state.present.page + 1);
+});
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && state.present.on) exitPresent();
+});
 
 /* ---------- 드래그 앤 드롭으로 PDF 열기 ---------- */
 const dropHint = document.getElementById('dropHint');
@@ -855,8 +1167,8 @@ window.addEventListener('drop', async (event) => {
 });
 
 // 연결 프로그램(마우스 오른쪽 → 연결 프로그램)으로 실행됐을 때 전달되는 파일
-window.api.onOpenFile(async ({ name, data }) => {
-  await loadPdf(new Uint8Array(data), name);
+window.api.onOpenFile(async ({ name, data, path: filePath }) => {
+  await loadPdf(new Uint8Array(data), name, filePath || null);
 });
 
 /* ---------- 손 도구(패닝) ---------- */
@@ -907,6 +1219,7 @@ window.__app = {
   extractPages,
   annotsOf,
   paintOverlay,
+  refreshThumb,
   renderThumbs,
   buildOutputBytes,
   runOcrOnPage,

@@ -1,11 +1,12 @@
 {
   "name": "jspdf-app",
   "productName": "JSPDF",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "JSPDF - Windows desktop PDF editor",
   "main": "src/main/main.js",
-  "author": "JSPDF",
+  "author": "jiseok",
   "license": "MIT",
+  "copyright": "Copyright © 2026 jiseok",
   "scripts": {
     "start": "npm run icon && electron .",
     "smoke": "electron scripts/smoke.js",
@@ -19,12 +20,15 @@
   },
   "devDependencies": {
     "electron": "^33.4.11",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "rcedit": "^4.0.1"
   },
   "build": {
     "appId": "com.jspdf.app",
     "productName": "JSPDF",
     "icon": "build/icon.ico",
+    "copyright": "Copyright © 2026 jiseok",
+    "afterPack": "scripts/after-pack.cjs",
     "files": [
       "src/**/*",
       "node_modules/pdfjs-dist/build/**/*",
@@ -46,13 +50,17 @@
       "target": [
         "nsis"
       ],
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "JSPDF"
+      "shortcutName": "JSPDF",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     }
   },
   "allowScripts": {

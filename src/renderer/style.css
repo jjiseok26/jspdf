@@ -161,6 +161,9 @@ html, body {
 }
 .ico-open { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23f5c400' d='M4 10h10l2 3h12v13H4z'/%3E%3Cpath fill='%23e8a800' d='M4 10h10l2 3H4z'/%3E%3C/svg%3E"); }
 .ico-save { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%234a90d9' x='6' y='4' width='20' height='24' rx='1'/%3E%3Crect fill='%23fff' x='10' y='4' width='12' height='8'/%3E%3Crect fill='%232b6cb0' x='12' y='18' width='8' height='8'/%3E%3C/svg%3E"); }
+.ico-save-as { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%234a90d9' x='4' y='6' width='16' height='20' rx='1'/%3E%3Crect fill='%23fff' x='7' y='6' width='10' height='6'/%3E%3Crect fill='%23217346' x='10' y='18' width='6' height='6'/%3E%3Crect fill='%234a90d9' x='18' y='10' width='10' height='16' rx='1'/%3E%3Crect fill='%23fff' x='21' y='10' width='6' height='5'/%3E%3C/svg%3E"); }
+.ico-print { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%23ccc' x='8' y='4' width='16' height='8'/%3E%3Crect fill='%23fff' stroke='%23999' x='6' y='12' width='20' height='12'/%3E%3Crect fill='%23e8e8e8' x='10' y='16' width='12' height='10'/%3E%3Crect fill='%23333' x='10' y='2' width='12' height='6'/%3E%3C/svg%3E"); }
+.ico-compress { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%23fff' stroke='%23999' x='6' y='8' width='20' height='18'/%3E%3Cpath fill='none' stroke='%23217346' stroke-width='2' d='M11 16h10M16 11v10'/%3E%3Cpath fill='%23217346' d='M4 14h4v4H4zM24 14h4v4h-4z'/%3E%3C/svg%3E"); }
 .ico-hand { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23f4c27a' stroke='%23c99a4e' d='M10 18V10a2 2 0 114 0v2h1V9a2 2 0 114 0v3h1V11a2 2 0 114 0v7a6 6 0 01-6 6h-2a4 4 0 01-4-4v-2z'/%3E%3C/svg%3E"); }
 .ico-text { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext x='6' y='24' font-size='20' font-weight='700' fill='%23c42b1c'%3ET%3C/text%3E%3Cpath fill='%23333' d='M22 20l4 4-2 2-4-4z'/%3E%3C/svg%3E"); }
 .ico-zoom { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='14' cy='14' r='8' fill='none' stroke='%234a90d9' stroke-width='2'/%3E%3Cpath stroke='%234a90d9' stroke-width='2' d='M20 20l8 8'/%3E%3Ctext x='11' y='18' font-size='12' fill='%234a90d9'%3E%2B%3C/text%3E%3C/svg%3E"); }
@@ -202,7 +205,7 @@ html, body {
   position: relative; border: 2px solid transparent; border-radius: 4px;
   cursor: grab; background: #fff; line-height: 0;
 }
-.thumb canvas { width: 100%; display: block; border-radius: 2px; }
+.thumb canvas { width: 100%; height: auto; display: block; border-radius: 2px; }
 .thumb.current { border-color: var(--accent-blue); }
 .thumb.dragging { opacity: .4; }
 .thumb.drop-before { box-shadow: 0 -3px 0 var(--accent-blue); }
@@ -244,7 +247,9 @@ html, body {
   flex: 0 0 auto; height: 24px; padding: 0 12px;
   background: var(--accent-blue); color: #fff;
   line-height: 24px; font-size: 11px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
+.statusbar .copyright { opacity: 0.85; flex-shrink: 0; }
 
 .drop-hint {
   position: fixed; inset: 0; z-index: 40;
@@ -254,9 +259,10 @@ html, body {
   font-size: 20px; color: #fff; pointer-events: none;
 }
 
-.present { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; z-index: 50; }
-.present canvas { max-width: 100%; max-height: 100%; }
-.present-hint { position: fixed; bottom: 14px; color: #888; font-size: 12px; }
+.present { position: fixed; inset: 0; background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 50; outline: none; }
+.present canvas { max-width: calc(100vw - 32px); max-height: calc(100vh - 80px); box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+.present-page { position: fixed; top: 16px; color: #eee; font-size: 14px; font-weight: 600; }
+.present-hint { position: fixed; bottom: 14px; color: #aaa; font-size: 12px; }
 
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 60; }
 .modal-box { width: 380px; background: #fff; border: 1px solid var(--ribbon-line); border-radius: 6px; padding: 16px; color: #222; }

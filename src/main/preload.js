@@ -8,8 +8,9 @@ contextBridge.exposeInMainWorld('api', {
   openPdfs: (multi = false) => ipcRenderer.invoke('file:open', { filters: PDF_FILTER, multi }),
   openImages: (multi = true) => ipcRenderer.invoke('file:open', { filters: IMAGE_FILTER, multi }),
   openTexts: () => ipcRenderer.invoke('file:open', { filters: TEXT_FILTER, multi: true }),
-  savePdf: (defaultName, data) =>
-    ipcRenderer.invoke('file:save', { defaultName, filters: PDF_FILTER, data }),
+  savePdf: (defaultName, data, options = {}) =>
+    ipcRenderer.invoke('file:save', { defaultName, filters: PDF_FILTER, data, ...options }),
+  printPdf: (data) => ipcRenderer.invoke('print:pdf', { data }),
   saveText: (defaultName, data) =>
     ipcRenderer.invoke('file:save', {
       defaultName,

@@ -41,12 +41,17 @@ app.whenReady().then(async () => {
     list.push({ t: 'pen', color: '#e03131', w: 0.004, pts: [[0.1,0.1],[0.5,0.4]] });
     list.push({ t: 'hl', color: '#ffd43b', x: 0.1, y: 0.5, w: 0.4, h: 0.05 });
     list.push({ t: 'note', text: '검토 필요합니다', x: 0.55, y: 0.1, w: 0.3, h: 0.06, size: 0.014, color: '#e03131' });
-    list.push({ t: 'edit', text: '수정된 본문 내용', bg: '#ffffff', x: 0.1, y: 0.62, w: 0.5, h: 0.05, size: 0.014, color: '#111' });
+    list.push({ t: 'insert', text: '삽입된 텍스트', x: 0.1, y: 0.72, w: 0.4, h: 0.05, size: 0.014, color: '#111' });
     list.push({ t: 'seal', img: a.makeSealImage('홍길동'), x: 0.7, y: 0.8, w: 0.15, h: 0.15, opacity: 0.95 });
     a.paintOverlay(0);
     const probe = a.state.pages[0].overlay.getContext('2d').getImageData(0, 0, a.state.pages[0].overlay.width, a.state.pages[0].overlay.height).data;
     let painted = 0;
     for (let i = 3; i < probe.length; i += 4) if (probe[i] > 0) painted += 1;
+
+    const thumbCanvas = document.querySelector('#thumbList .thumb canvas');
+    const thumbProbe = thumbCanvas?.getContext('2d').getImageData(0, 0, thumbCanvas.width, thumbCanvas.height).data;
+    let thumbPixels = 0;
+    if (thumbProbe) for (let i = 3; i < thumbProbe.length; i += 4) if (thumbProbe[i] > 0) thumbPixels += 1;
 
     const textLen = (a.state.textItems[0] || []).reduce((sum, item) => sum + item.str.length, 0);
     const textLayerActive = !!document.querySelector('.text-layer.active');
@@ -64,6 +69,8 @@ app.whenReady().then(async () => {
     const text = await a.extractPages();
     return {
       overlayPaintedPixels: painted,
+      thumbPixels,
+      thumbSize: thumbCanvas ? [thumbCanvas.width, thumbCanvas.height] : [0, 0],
       textLen,
       textLayerActive,
       thumbs: document.querySelectorAll('#thumbList .thumb').length,

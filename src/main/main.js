@@ -1,8 +1,17 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
+const os = require('os');
+const { pathToFileURL } = require('url');
 
 const fsSync = require('fs');
+
+const iconPath = path.join(__dirname, '..', '..', 'build', 'icon.png');
+const appIcon = nativeImage.createFromPath(iconPath);
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.jspdf.app');
+}
 
 let mainWindow = null;
 let pendingFile = null;
@@ -15,7 +24,11 @@ function pdfFromArgv(argv) {
 
 async function sendFileToRenderer(filePath) {
   if (!filePath || !mainWindow) return;
-  const payload = { name: path.basename(filePath), data: await fs.readFile(filePath) };
+  const payload = {
+    name: path.basename(filePath),
+    path: filePath,
+    data: await fs.readFile(filePath)
+  };
   if (rendererReady) {
     mainWindow.webContents.send('file:openExternal', payload);
   } else {
@@ -41,7 +54,7 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: '#1f2126',
     title: 'JSPDF',
-    icon: path.join(__dirname, '..', '..', 'build', 'icon.ico'),
+    icon: appIcon.isEmpty() ? path.join(__dirname, '..', '..', 'build', 'icon.ico') : appIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -106,11 +119,43 @@ ipcMain.handle('file:open', async (_e, { filters, multi }) => {
   return readFiles(result.filePaths);
 });
 
-ipcMain.handle('file:save', async (_e, { defaultName, filters, data }) => {
+ipcMain.handle('file:save', async (_e, { defaultName, filters, data, filePath }) => {
+  if (filePath) {
+    await fs.writeFile(filePath, Buffer.from(data));
+    return filePath;
+  }
   const result = await dialog.showSaveDialog(mainWindow, { defaultPath: defaultName, filters });
   if (result.canceled || !result.filePath) return null;
   await fs.writeFile(result.filePath, Buffer.from(data));
   return result.filePath;
+});
+
+ipcMain.handle('print:pdf', async (_e, { data }) => {
+  const tmpPath = path.join(os.tmpdir(), `jspdf-print-${Date.now()}.pdf`);
+  await fs.writeFile(tmpPath, Buffer.from(data));
+  const printWin = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true }
+  });
+  return new Promise((resolve) => {
+    const cleanup = async () => {
+      if (!printWin.isDestroyed()) printWin.destroy();
+      await fs.unlink(tmpPath).catch(() => {});
+    };
+    printWin.webContents.on('did-finish-load', () => {
+      setTimeout(() => {
+        printWin.webContents.print({ silent: false, printBackground: true }, async (success, failureReason) => {
+          await cleanup();
+          resolve({ success, failureReason: failureReason || null });
+        });
+      }, 600);
+    });
+    printWin.webContents.on('did-fail-load', async () => {
+      await cleanup();
+      resolve({ success: false, failureReason: 'PDF 로드 실패' });
+    });
+    printWin.loadURL(pathToFileURL(tmpPath).href);
+  });
 });
 
 ipcMain.handle('file:saveMany', async (_e, { files }) => {
