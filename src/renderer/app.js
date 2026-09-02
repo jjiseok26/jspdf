@@ -88,7 +88,22 @@ function showModal(title, fields) {
 }
 
 /* ---------- 문서 열기 / 렌더 ---------- */
+let renderToken = 0;
+
+function isNaturalOrder() {
+  return state.order.every((pageIndex, position) => pageIndex === position);
+}
+
+function pageBadgeText(position, pageIndex) {
+  const total = state.order.length;
+  if (isNaturalOrder()) return `${position + 1} / ${total}`;
+  return `${position + 1} / ${total} (원본 ${pageIndex + 1}쪽)`;
+}
+
 async function loadPdf(bytes, name, filePath = null) {
+  endDragSession();
+  dragFrom = -1;
+  renderToken += 1;
   state.originalBytes = new Uint8Array(bytes);
   state.pdf = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
   state.name = name;
@@ -105,11 +120,15 @@ async function loadPdf(bytes, name, filePath = null) {
 }
 
 async function renderAll() {
+  const token = ++renderToken;
+  endDragSession();
   viewer.innerHTML = '';
   state.pages = [];
   for (let position = 0; position < state.order.length; position += 1) {
+    if (token !== renderToken) return;
     const i = state.order[position];
     const page = await state.pdf.getPage(i + 1);
+    if (token !== renderToken) return;
     const viewport = page.getViewport({ scale: state.zoom * 1.35 });
 
     const wrap = document.createElement('div');
@@ -127,12 +146,13 @@ async function renderAll() {
 
     const badge = document.createElement('div');
     badge.className = 'page-no';
-    badge.textContent = `${position + 1} / ${state.order.length} (원본 ${i + 1}쪽)`;
+    badge.textContent = pageBadgeText(position, i);
 
     wrap.append(base);
     viewer.appendChild(wrap);
 
     await page.render({ canvasContext: base.getContext('2d'), viewport }).promise;
+    if (token !== renderToken) return;
 
     const pdfItems = await extractPdfTextItems(page, viewport);
     state.textItems[i] = pdfItems;
@@ -144,6 +164,7 @@ async function renderAll() {
     attachEditing(info);
     paintOverlay(i);
   }
+  if (token !== renderToken) return;
   zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
   syncZoomSelect();
   updatePointerMode();
@@ -175,7 +196,7 @@ function updatePointerMode() {
 
   for (const info of state.pages) {
     if (info.textLayer) info.textLayer.classList.toggle('active', textMode);
-    if (info.overlay) info.overlay.style.pointerEvents = 'none';
+    if (info.overlay) info.overlay.style.pointerEvents = drawMode || selectMode ? 'auto' : 'none';
     if (info.wrap) {
       info.wrap.style.cursor = handMode
         ? 'grab'
@@ -298,7 +319,7 @@ async function renderThumbAt(position) {
   item.dataset.pageIndex = String(pageIndex);
   const label = document.createElement('div');
   label.className = 'label';
-  label.textContent = `${position + 1} (원본 ${pageIndex + 1})`;
+  label.textContent = `${position + 1}${isNaturalOrder() ? '' : ` (원본 ${pageIndex + 1})`}`;
   item.append(canvas, label);
   item.addEventListener('click', () => {
     const info = pageInfo(pageIndex);
@@ -368,79 +389,101 @@ async function finishThumbDrag() {
 
 thumbList.addEventListener('dragend', finishThumbDrag);
 
-/* ---------- 편집 상호작용 ---------- */
-function attachEditing(info) {
-  const norm = (event) => {
-    const rect = info.wrap.getBoundingClientRect();
-    return { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
-  };
-  let drag = null;
+/* ---------- 전역 드래그 세션 (페이지 간 형광펜/펜 충돌 방지) ---------- */
+let activeDrag = null;
 
-  const onMove = (event) => {
-    if (!drag) return;
-    const p = norm(event);
-    if (drag.kind === 'pen') {
-      drag.annot.pts.push([p.x, p.y]);
-    } else if (drag.kind === 'rect') {
-      drag.annot.x = Math.min(drag.origin.x, p.x);
-      drag.annot.y = Math.min(drag.origin.y, p.y);
-      drag.annot.w = Math.abs(p.x - drag.origin.x);
-      drag.annot.h = Math.abs(p.y - drag.origin.y);
-    } else if (drag.kind === 'move') {
-      moveAnnot(drag.annot, p.x - drag.last.x, p.y - drag.last.y);
-      drag.last = p;
-    } else if (drag.kind === 'resize') {
-      resizeAnnot(drag.annot, p.x - drag.last.x, p.y - drag.last.y);
-      drag.last = p;
-    }
-    paintOverlay(info.index);
-  };
+function normPoint(info, event) {
+  const rect = info.wrap.getBoundingClientRect();
+  return { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
+}
 
-  const endDrag = async () => {
-    if (!drag) return;
-    const finished = drag;
-    drag = null;
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', endDrag);
+function onDocDragMove(event) {
+  if (!activeDrag) return;
+  const { info, kind, annot, origin } = activeDrag;
+  const p = normPoint(info, event);
+  if (kind === 'pen') {
+    annot.pts.push([p.x, p.y]);
+  } else if (kind === 'rect') {
+    annot.x = Math.min(origin.x, p.x);
+    annot.y = Math.min(origin.y, p.y);
+    annot.w = Math.abs(p.x - origin.x);
+    annot.h = Math.abs(p.y - origin.y);
+  } else if (kind === 'move') {
+    moveAnnot(annot, p.x - activeDrag.last.x, p.y - activeDrag.last.y);
+    activeDrag.last = p;
+  } else if (kind === 'resize') {
+    resizeAnnot(annot, p.x - activeDrag.last.x, p.y - activeDrag.last.y);
+    activeDrag.last = p;
+  }
+  paintOverlay(info.index);
+}
 
-    if (finished.kind === 'rect' && finished.annot.t === 'edit') {
-      const list = annotsOf(info.index);
-      if (finished.annot.w < 0.02 || finished.annot.h < 0.015) {
-        const idx = list.indexOf(finished.annot);
+function endDragSession() {
+  if (!activeDrag) return;
+  document.removeEventListener('mousemove', onDocDragMove);
+  document.removeEventListener('mouseup', onDocDragEnd);
+  window.removeEventListener('blur', onDocDragEnd);
+  activeDrag = null;
+}
+
+async function onDocDragEnd() {
+  if (!activeDrag) return;
+  const session = activeDrag;
+  endDragSession();
+  const { info, kind, annot } = session;
+
+  if (kind === 'rect' && annot.t === 'edit') {
+    const list = annotsOf(info.index);
+    if (annot.w < 0.02 || annot.h < 0.015) {
+      const idx = list.indexOf(annot);
+      if (idx >= 0) list.splice(idx, 1);
+    } else {
+      const values = await showModal('본문 수정', [
+        { name: 'text', label: '새로 넣을 텍스트', type: 'textarea' },
+        { name: 'bg', label: '기존 글자를 덮을 배경색', type: 'color', value: '#ffffff' }
+      ]);
+      if (!values || !values.text?.trim()) {
+        const idx = list.indexOf(annot);
         if (idx >= 0) list.splice(idx, 1);
       } else {
-        const values = await showModal('본문 수정', [
-          { name: 'text', label: '새로 넣을 텍스트', type: 'textarea' },
-          { name: 'bg', label: '기존 글자를 덮을 배경색', type: 'color', value: '#ffffff' }
-        ]);
-        if (!values || !values.text?.trim()) {
-          const idx = list.indexOf(finished.annot);
-          if (idx >= 0) list.splice(idx, 1);
-        } else {
-          finished.annot.text = values.text;
-          finished.annot.bg = values.bg || '#ffffff';
-          finished.annot.color = '#111111';
-          delete finished.annot.pending;
-        }
+        annot.text = values.text;
+        annot.bg = values.bg || '#ffffff';
+        annot.color = '#111111';
+        delete annot.pending;
       }
-      paintOverlay(info.index);
-      refreshThumb(info.index);
-      setStatus('본문 수정 영역 적용 · 모서리 녹색 사각형으로 크기 조절');
-      return;
     }
-
+    paintOverlay(info.index);
     refreshThumb(info.index);
-  };
+    setStatus('본문 수정 영역 적용 · 모서리 녹색 사각형으로 크기 조절');
+    return;
+  }
 
-  const startDrag = () => {
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', endDrag);
-  };
+  if (kind === 'rect' && annot.t === 'hl') {
+    const list = annotsOf(info.index);
+    if (annot.w < 0.005 || annot.h < 0.005) {
+      const idx = list.indexOf(annot);
+      if (idx >= 0) list.splice(idx, 1);
+    }
+  }
 
+  paintOverlay(info.index);
+  refreshThumb(info.index);
+}
+
+function beginDragSession(session) {
+  endDragSession();
+  activeDrag = session;
+  document.addEventListener('mousemove', onDocDragMove);
+  document.addEventListener('mouseup', onDocDragEnd);
+  window.addEventListener('blur', onDocDragEnd);
+}
+
+/* ---------- 편집 상호작용 ---------- */
+function attachEditing(info) {
   info.wrap.addEventListener('mousedown', async (event) => {
     if (state.tool === 'text' && event.target.closest('.text-layer span')) return;
 
-    const p = norm(event);
+    const p = normPoint(info, event);
     const list = annotsOf(info.index);
     const strokeWidth = Number(sizeInput?.value || 3) / 1000;
 
@@ -449,16 +492,14 @@ function attachEditing(info) {
       const handle = hitResizeHandle(list, p.x, p.y);
       if (handle) {
         state.selected = { page: info.index, index: handle.index };
-        drag = { kind: 'resize', annot: list[handle.index], last: p };
-        startDrag();
+        beginDragSession({ info, kind: 'resize', annot: list[handle.index], last: p });
         state.pages.forEach((pg) => paintOverlay(pg.index));
         return;
       }
       const index = hitTest(list, p.x, p.y);
       state.selected = { page: info.index, index };
       if (index >= 0) {
-        drag = { kind: 'move', annot: list[index], last: p };
-        startDrag();
+        beginDragSession({ info, kind: 'move', annot: list[index], last: p });
         setStatus('개체 선택 · Delete 키 또는 [선택 삭제]로 제거 · 녹색 모서리로 크기 조절');
       } else {
         setStatus('개체가 선택되지 않았습니다');
@@ -477,15 +518,13 @@ function attachEditing(info) {
     if (state.tool === 'pen') {
       const annot = { t: 'pen', color: inkColor(), w: strokeWidth, pts: [[p.x, p.y]] };
       list.push(annot);
-      drag = { kind: 'pen', annot };
-      startDrag();
+      beginDragSession({ info, kind: 'pen', annot });
       return;
     }
     if (state.tool === 'highlight') {
       const annot = { t: 'hl', color: colorInput?.value || '#ffd43b', x: p.x, y: p.y, w: 0, h: 0 };
       list.push(annot);
-      drag = { kind: 'rect', annot, origin: p };
-      startDrag();
+      beginDragSession({ info, kind: 'rect', annot, origin: p });
       return;
     }
     if (state.tool === 'note') {
@@ -540,8 +579,7 @@ function attachEditing(info) {
         pending: true
       };
       list.push(annot);
-      drag = { kind: 'rect', annot, origin: p };
-      startDrag();
+      beginDragSession({ info, kind: 'rect', annot, origin: p });
       setStatus('수정할 영역을 드래그로 지정하세요');
       return;
     }
@@ -1052,6 +1090,7 @@ const actions = {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【4. 보기 탭】
 · 확대/축소/100%: 보기 배율 조절
+· Ctrl + 마우스 휠: 확대/축소
 · 프레젠테이션: 전체화면 슬라이드쇼
   - ← → / PageUp·Down / Space: 페이지 이동
   - 화면 왼쪽 클릭: 이전 / 오른쪽 클릭: 다음
@@ -1154,6 +1193,20 @@ document.getElementById('zoomSelect')?.addEventListener('change', async (event) 
   state.zoom = Number(event.target.value);
   await renderAll();
 });
+
+viewer.addEventListener(
+  'wheel',
+  (event) => {
+    if (!event.ctrlKey || !state.pdf) return;
+    event.preventDefault();
+    const step = event.deltaY > 0 ? -0.1 : 0.1;
+    const next = Math.min(3, Math.max(0.4, Math.round((state.zoom + step) * 10) / 10));
+    if (next === state.zoom) return;
+    state.zoom = next;
+    renderAll().then(() => setStatus(`배율 ${Math.round(state.zoom * 100)}%`));
+  },
+  { passive: false }
+);
 
 document.getElementById('findInput')?.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') findStep(event.shiftKey ? -1 : 1);

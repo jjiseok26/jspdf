@@ -2,6 +2,15 @@
 
 All notable changes to JSPDF are documented here. Version numbers follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] - 2026-09-02
+
+### Added
+- Ctrl + 마우스 휠로 확대/축소
+
+### Fixed
+- PDF 열 때 페이지가 섞여 보이던 렌더링 경쟁 상태 수정
+- 1페이지 형광펜 후 2페이지에 형광펜이 안 되던 드래그 세션 충돌 수정
+
 ## [0.1.3] - 2026-09-01
 
 ### Added
