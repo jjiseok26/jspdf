@@ -56,6 +56,7 @@ All notable changes to JSPDF are documented here. Version numbers follow [Semant
 - Windows 연결 프로그램 등록 (PDF 우클릭 → JSPDF)
 - NSIS 설치 파일 빌드 (`npm run dist`)
 
+[0.1.4]: https://github.com/jjiseok26/jspdf/releases/tag/v0.1.4
 [0.1.3]: https://github.com/jjiseok26/jspdf/releases/tag/v0.1.3
 [0.1.2]: https://github.com/jjiseok26/jspdf/releases/tag/v0.1.2
 [0.1.1]: https://github.com/jjiseok26/jspdf/releases/tag/v0.1.1
